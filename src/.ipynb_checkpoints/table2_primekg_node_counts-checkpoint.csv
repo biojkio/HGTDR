@@ -1,0 +1,12 @@
+Entity,Count before removal,Count after removal,Removal percent
+anatomy,14035,14035,0.0
+biological_process,28642,28642,0.0
+cellular_component,4176,4176,0.0
+disease,17080,1363,92.02
+drug,7957,1801,77.37
+effect/phenotype,15311,15082,1.5
+exposure,818,780,4.65
+gene/protein,27671,27573,0.35
+molecular_function,11169,11169,0.0
+pathway,2516,2516,0.0
+Total,129375,107137,17.19
