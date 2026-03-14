@@ -1,8 +1,6 @@
 # 排除 data 文件夹（全项目所有层级的 data 都排除）
 data/
 
-# 排除 out 文件夹（全项目所有层级的 out 都排除）
-out/
 
 # 排除 IDE 配置文件夹（PyCharm/IntelliJ IDEA）
 .idea/
