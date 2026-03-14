@@ -4,11 +4,14 @@ data/
 # 排除 out 文件夹（全项目所有层级的 out 都排除）
 out/
 
-# 排除 Python 字节码目录（全项目生效）
-__pycache__/
+# 排除 IDE 配置文件夹（PyCharm/IntelliJ IDEA）
+.idea/
 
-# 排除所有 .pyc 字节码文件（避免遗漏单个 .pyc 文件）
+# 排除 Python 字节码文件/目录
+__pycache__/
 *.pyc
+*.pyo
+*.pyd
 
 # 排除 README.md 文件
 README.md
