@@ -1,0 +1,25 @@
+# 排除 data 文件夹（全项目所有层级的 data 都排除）
+data/
+
+# 排除 out 文件夹（全项目所有层级的 out 都排除）
+out/
+
+# 排除 Python 字节码目录（全项目生效）
+__pycache__/
+
+# 排除所有 .pyc 字节码文件（避免遗漏单个 .pyc 文件）
+*.pyc
+
+# 排除 README.md 文件
+README.md
+
+# 可选：排除 Jupyter 笔记本检查点（若有.ipynb文件建议保留）
+.ipynb_checkpoints/
+
+# 可选：排除 Python 编译优化文件
+*.pyo
+*.pyd
+
+# 可选：排除环境变量/配置文件（避免泄露敏感信息）
+.env
+*.ini
