@@ -1,19 +1,19 @@
 # Source code for "HGTDR: Advancing Drug Repurposing with Heterogeneous Graph Transformers"
 Requirements:
 
-torch==1.13.1
+torch==
 
-torch-geometric==2.3.1
+torch-geometric==
 
-torch-sparse==0.6.17
+torch-sparse==
 
-torch-scatter==2.1.1
+torch-scatter==
 
-pandas==1.4.2
+pandas==
 
-matplotlib==3.5.1
+matplotlib==
 
-scikit-learn==1.0.2
+scikit-learn==
 
 pickle5
 
