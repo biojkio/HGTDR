@@ -1,0 +1,32 @@
+Entity,Count before removal,Count after removal,Removal percent
+anatomy_anatomy,28064,28064,0.0
+anatomy_protein_absent,39774,39774,0.0
+anatomy_protein_present,3036406,3036406,0.0
+bioprocess_bioprocess,105772,105772,0.0
+bioprocess_protein,289610,289610,0.0
+cellcomp_cellcomp,9690,9690,0.0
+cellcomp_protein,166804,166804,0.0
+contraindication,61350,32194,47.52
+disease_disease,64388,1772,97.25
+disease_phenotype_negative,2386,140,94.13
+disease_phenotype_positive,300634,24490,91.85
+disease_protein,160822,99232,38.3
+drug_drug,2672628,743328,72.19
+drug_effect,129568,102736,20.71
+drug_protein,51306,25010,51.25
+exposure_bioprocess,3250,3250,0.0
+exposure_cellcomp,20,20,0.0
+exposure_disease,4608,2924,36.55
+exposure_exposure,4140,4140,0.0
+exposure_molfunc,90,90,0.0
+exposure_protein,2424,2424,0.0
+indication,18776,18776,0.0
+molfunc_molfunc,27148,27148,0.0
+molfunc_protein,139060,139060,0.0
+off-label use,5136,3836,25.31
+pathway_pathway,5070,5070,0.0
+pathway_protein,85292,85292,0.0
+phenotype_phenotype,37472,37472,0.0
+phenotype_protein,6660,6660,0.0
+protein_protein,642150,642150,0.0
+Total,8100498,5683334,29.84
