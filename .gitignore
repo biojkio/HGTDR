@@ -5,6 +5,8 @@ data/
 # 排除 IDE 配置文件夹（PyCharm/IntelliJ IDEA）
 .idea/
 
+models/
+
 # 排除 Python 字节码文件/目录
 __pycache__/
 *.pyc
