@@ -1,0 +1,12 @@
+{
+  "Diff": {
+    "Ignore": {
+      "/metadata/language_info": ["version", "display_name"]
+    }
+  },
+  "GitDiff": {
+    "Ignore": {
+      "/metadata/language_info": ["version", "display_name"]
+    }
+  }
+}
