@@ -11,7 +11,6 @@ def AUROC(scores, labels, output_dir):
 
     ns_probs = [0 for _ in range(len(labels))]
     lr_auc = roc_auc_score(labels, scores)
-    write_to_out('AUROC: %.3f \n' % (lr_auc))
     write_to_out('AUROC: %.3f \n' % (lr_auc), output_dir)
     ns_fpr, ns_tpr, _ = roc_curve(labels, ns_probs)
     lr_fpr, lr_tpr, _ = roc_curve(labels, scores)
@@ -46,13 +45,10 @@ def AUPR(scores, labels, output_dir):
     pyplot.clf()
     
 def plot_losses(losses, val_losses, output_dir):
-    pyplot.ioff() 
-    
     pyplot.plot(range(len(losses)), losses, label="loss")
     pyplot.plot(range(len(losses)), val_losses, label="val_loss")
     pyplot.legend()
-    save_path = os.path.join(output_dir, 'losses.png')
-    pyplot.savefig(save_path, dpi=200)
+    pyplot.savefig(output_dir+'/losses', dpi=200)
     pyplot.clf()
     
 def write_to_out(text, output_dir):
