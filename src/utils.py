@@ -3,6 +3,9 @@ from matplotlib import pyplot
 import os
 
 def AUROC(scores, labels, output_dir):
+    
+    pyplot.ioff() 
+    
     scores = scores.cpu().numpy()
     labels = labels.cpu().numpy()
 
@@ -23,6 +26,8 @@ def AUROC(scores, labels, output_dir):
     pyplot.clf()
 
 def AUPR(scores, labels, output_dir):
+    pyplot.ioff() 
+    
     scores = scores.cpu().numpy()
     labels = labels.cpu().numpy()
 
@@ -41,12 +46,13 @@ def AUPR(scores, labels, output_dir):
     pyplot.clf()
     
 def plot_losses(losses, val_losses, output_dir):
+    pyplot.ioff() 
+    
     pyplot.plot(range(len(losses)), losses, label="loss")
     pyplot.plot(range(len(losses)), val_losses, label="val_loss")
     pyplot.legend()
     save_path = os.path.join(output_dir, 'losses.png')
     pyplot.savefig(save_path, dpi=200)
-    pyplot.show()
     pyplot.clf()
     
 def write_to_out(text, output_dir):
