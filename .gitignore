@@ -5,6 +5,8 @@ data/
 # 排除 IDE 配置文件夹（PyCharm/IntelliJ IDEA）
 .idea/
 
+.tmp.driveupload/
+
 models/
 *.zip
 
