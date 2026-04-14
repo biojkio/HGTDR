@@ -668,9 +668,8 @@ def run_importance_analysis(config):
     model_path = os.path.join(output_dir, 'saved_model.pt')
     model.load_state_dict(torch.load(model_path, map_location=device))
 
-    layer_stats_and_conv = collect_meta_relation_importance(GNN, val_loader)
-    save_meta_relation_importance(layer_stats_and_conv, GNN, train_data, output_dir, top_k=5)
-
+    layer_stats = collect_meta_relation_importance(GNN)
+    save_meta_relation_importance(layer_stats, output_dir, top_k=5)
 print("ok")
 # run(config)
 # run_importance_analysis(config)
