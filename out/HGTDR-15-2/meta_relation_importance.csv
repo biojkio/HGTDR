@@ -1,0 +1,16 @@
+Layer,Node type (source),Edge type,Node type (target),Meta-relation importance
+Layer 3,Disease,indication,Drug,1.092
+Layer 3,Disease,disease-disease,Disease,1.089
+Layer 3,Exposure,exposure-protein,Gene/protein,1.07
+Layer 3,Disease,disease-protein,Gene/protein,1.066
+Layer 3,Gene/protein,disease-protein,Disease,1.06
+Layer 2,Disease,disease-disease,Disease,1.161
+Layer 2,Drug,indication,Disease,1.095
+Layer 2,Disease,indication,Drug,1.08
+Layer 2,Drug,contraindication,Disease,1.07
+Layer 2,Effect/phenotype,disease-phenotype-negative,Disease,1.07
+Layer 1,Disease,indication,Drug,1.213
+Layer 1,Disease,disease-disease,Disease,1.138
+Layer 1,Drug,off-label use,Disease,1.124
+Layer 1,Effect/phenotype,disease-phenotype-positive,Disease,1.121
+Layer 1,Exposure,exposure-disease,Disease,1.109
