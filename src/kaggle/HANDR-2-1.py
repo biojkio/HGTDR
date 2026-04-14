@@ -1,10 +1,11 @@
 # %% [markdown]
-# 可以跑的版本
+# 添加了元路径权重统计和绘图，pyg升级了，没法用
 
 # %%
 from torch_geometric.nn import HANConv, Linear
 from torch_geometric.loader import HGTLoader
 from torch_geometric.data import HeteroData
+from torch_geometric.transforms import AddMetaPaths
 import torch.nn.functional as F
 import pickle
 import torch.nn as nn
@@ -291,14 +292,17 @@ class HAN(nn.Module):
                     metadata=metadata,
                     heads=num_heads,
                     dropout=dropout,
-                    metapaths=METAPATHS       # ← 新增：传入预设元路径
                 )
             )
 
         self.lin = nn.Linear(hidden_channels, out_channels)
         self.dropout = nn.Dropout(dropout)
 
-    def forward(self, x_dict, edge_index_dict):
+        # 用于累积每个 batch 的语义注意力权重
+        # 结构: {layer_idx: List[Tensor]}，每个 Tensor shape = [num_metapaths]
+        self._semantic_attn_accum = {i: [] for i in range(num_layers)}
+
+    def forward(self, x_dict, edge_index_dict,return_weights=False):
         # 输入投影
         x_dict = {
             node_type: self.dropout(F.relu(self.lin_dict[node_type](x)))
@@ -306,14 +310,49 @@ class HAN(nn.Module):
             if node_type in self.lin_dict
         }
 
-        # 多层 HANConv
-        for conv in self.convs:
-            x_dict = conv(x_dict, edge_index_dict)
+        for i, conv in enumerate(self.convs):
+            if return_weights:
+                # return_semantic_attention_weights=True 时
+                # x_dict 变为 {node_type: (out, (metapath_list, attn_weights))}
+                out = conv(x_dict, edge_index_dict,
+                           return_semantic_attention_weights=True)
+                # 提取各节点类型的语义注意力并平均
+                layer_weights = []
+                for node_type, val in out.items():
+                    if isinstance(val, tuple):
+                        _, (_, attn) = val  # attn: [num_metapaths]
+                        layer_weights.append(attn.detach().cpu())
+                if layer_weights:
+                    # 跨节点类型取均值（通常 drug/disease 各有一组）
+                    avg = torch.stack(layer_weights).mean(0)
+                    self._semantic_attn_accum[i].append(avg)
+                # 重新整理 x_dict 为纯 Tensor
+                x_dict = {
+                    k: (v[0] if isinstance(v, tuple) else v)
+                    for k, v in out.items()
+                }
+            else:
+                x_dict = conv(x_dict, edge_index_dict)
+
             x_dict = {k: F.relu(v) for k, v in x_dict.items() if v is not None}
 
+        
         drug_out    = self.lin(x_dict[node_type1])
         disease_out = self.lin(x_dict[node_type2])
         return F.relu(drug_out), F.relu(disease_out)
+    
+    def get_metapath_weights(self):
+        """返回各层的平均语义注意力权重，shape: [num_layers, num_metapaths]"""
+        result = {}
+        for layer_idx, accum in self._semantic_attn_accum.items():
+            if accum:
+                result[f'layer_{layer_idx}'] = torch.stack(accum).mean(0)
+        return result
+
+    def reset_weight_accum(self):
+        """每次评估前重置累积器"""
+        for k in self._semantic_attn_accum:
+            self._semantic_attn_accum[k] = []
 
 # %%
 class MLPPredictor(nn.Module):
@@ -364,7 +403,6 @@ def define_model(dropout):
         num_layers=3,
         dropout=dropout,
         metadata=metadata,
-        metapaths=METAPATHS    # ← 新增：传入预设元路径
     )
 
     pred = MLPPredictor(64, dropout)
@@ -567,10 +605,117 @@ def test(GNN, pred, model, loader):
     loss = compute_loss(out, labels)    
     return out, labels, source, dest, loss.cpu().numpy()
 
+
 # %% [markdown]
 # ### Run
 
 # %%
+
+# ─── 元路径重要性提取与可视化 ─────────────────────────────────────
+METAPATH_LABELS = [
+    "Drug→Dis→Dis→Drug",
+    "Drug→Dis→Drug",
+    "Drug→Pro→Dis→Drug",
+    "Drug→Pro→Drug",
+    "Dis→Dis→Dis",
+    "Drug→Phe→Drug",
+    "Dis→Phe→Dis",
+    "Drug→Pro→Phe→Dis→Drug",
+]
+
+@torch.no_grad()
+def extract_metapath_importance(GNN, loader, output_dir, epoch_label='best'):
+    """
+    在 eval 模式下跑一遍 loader，收集语义注意力权重，
+    输出数值表格（CSV）+ 折线图（PNG）。
+    """
+    import matplotlib.pyplot as plt
+    import matplotlib
+    matplotlib.use('Agg')
+
+    GNN.eval()
+    GNN.reset_weight_accum()
+
+    for batch in iter(loader):
+        batch = make_test_batch(batch)
+        batch = batch.to(device, non_blocking=True)
+        # 开启权重收集
+        GNN(batch.x_dict, batch.edge_index_dict, return_weights=True)
+
+    weights_dict = GNN.get_metapath_weights()  # {layer_0: Tensor, layer_1: ...}
+
+    if not weights_dict:
+        print("[Warning] 未能提取到语义注意力权重，请确认 PyG 版本 >= 2.3")
+        return
+
+    num_layers = len(weights_dict)
+    # ── 整理成 DataFrame ──────────────────────────────────────────
+    rows = {}
+    for layer_name, w in weights_dict.items():
+        w_np = w.numpy()
+        n = min(len(w_np), len(METAPATH_LABELS))
+        rows[layer_name] = {METAPATH_LABELS[j]: round(float(w_np[j]), 6)
+                            for j in range(n)}
+
+    import pandas as pd
+    df = pd.DataFrame(rows).T          # 行=layer，列=metapath
+    df.index.name = 'layer'
+    csv_path = os.path.join(output_dir, f'metapath_weights_{epoch_label}.csv')
+    df.to_csv(csv_path)
+    print(f"\n[元路径重要性] 已保存至 {csv_path}")
+    print(df.to_string())
+
+    # ── 分层柱状图 ────────────────────────────────────────────────
+    fig, axes = plt.subplots(1, num_layers,
+                             figsize=(5 * num_layers, 4),
+                             sharey=False)
+    if num_layers == 1:
+        axes = [axes]
+
+    colors = plt.cm.tab10.colors
+    for ax, (layer_name, w) in zip(axes, weights_dict.items()):
+        w_np = w.numpy()
+        n = min(len(w_np), len(METAPATH_LABELS))
+        labels = METAPATH_LABELS[:n]
+        bars = ax.barh(labels, w_np[:n],
+                       color=colors[:n], edgecolor='white', height=0.6)
+        ax.set_xlabel('Semantic attention weight')
+        ax.set_title(f'{layer_name}', fontsize=11)
+        ax.set_xlim(0, max(w_np[:n]) * 1.25)
+        for bar, val in zip(bars, w_np[:n]):
+            ax.text(val + 0.002, bar.get_y() + bar.get_height() / 2,
+                    f'{val:.4f}', va='center', fontsize=8)
+
+    fig.suptitle(f'Meta-path Semantic Attention Weights ({epoch_label})',
+                 fontsize=13, fontweight='bold')
+    plt.tight_layout()
+    bar_path = os.path.join(output_dir, f'metapath_weights_bar_{epoch_label}.png')
+    fig.savefig(bar_path, dpi=150, bbox_inches='tight')
+    plt.close(fig)
+    print(f"[元路径重要性] 柱状图已保存至 {bar_path}")
+
+    # ── 跨层折线图（若层数 > 1）────────────────────────────────────
+    if num_layers > 1:
+        fig2, ax2 = plt.subplots(figsize=(9, 4))
+        layer_names = list(weights_dict.keys())
+        first_w = next(iter(weights_dict.values())).numpy()
+        n = min(len(first_w), len(METAPATH_LABELS))
+        for j in range(n):
+            vals = [weights_dict[ln].numpy()[j] for ln in layer_names]
+            ax2.plot(layer_names, vals, marker='o',
+                     label=METAPATH_LABELS[j], color=colors[j])
+        ax2.set_ylabel('Semantic attention weight')
+        ax2.set_title('Meta-path importance across layers', fontsize=12)
+        ax2.legend(bbox_to_anchor=(1.02, 1), loc='upper left', fontsize=8)
+        plt.tight_layout()
+        line_path = os.path.join(output_dir,
+                                 f'metapath_weights_line_{epoch_label}.png')
+        fig2.savefig(line_path, dpi=150, bbox_inches='tight')
+        plt.close(fig2)
+        print(f"[元路径重要性] 折线图已保存至 {line_path}")
+
+    return df
+
 def run(config):
     losses, val_losses = [], []
     best_val_loss = float('inf')
