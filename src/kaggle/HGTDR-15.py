@@ -598,9 +598,8 @@ def run(config):
     out, labels, source, dest, val_loss = test(GNN, pred, model, val_loader)
     AUPR(out, labels, output_dir)
     AUROC(out, labels, output_dir)
-    # 统计并保存元关系重要性
-    layer_stats_and_conv = collect_meta_relation_importance(GNN, val_loader)
-    save_meta_relation_importance(layer_stats_and_conv, GNN, train_data, output_dir, top_k=5)
+    layer_stats = collect_meta_relation_importance(GNN)
+    save_meta_relation_importance(layer_stats, output_dir, top_k=5)
     
 # %%
 # ─── 元关系重要性统计 ───────────────────────────────────────────────────────────
@@ -661,6 +660,7 @@ def save_meta_relation_importance(layer_stats, output_dir, top_k=5):
 def run_importance_analysis(config):
     script_name = config.get("file_name")
     output_dir = os.path.join('/kaggle/working', script_name)
+    os.makedirs(output_dir, exist_ok=True)
 
     _, val_loader = define_loaders(config)
     GNN, pred, model = define_model(config['dropout'])
