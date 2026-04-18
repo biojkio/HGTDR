@@ -1,0 +1,33 @@
+Epoch: 00, Loss: 0.3330, ValLoss: 0.3463 
+Epoch: 01, Loss: 0.3261, ValLoss: 0.3457 
+Epoch: 02, Loss: 0.3185, ValLoss: 0.3451 
+Epoch: 03, Loss: 0.3133, ValLoss: 0.3427 
+Epoch: 04, Loss: 0.3075, ValLoss: 0.3371 
+Epoch: 05, Loss: 0.3045, ValLoss: 0.3287 
+Epoch: 06, Loss: 0.2980, ValLoss: 0.3264 
+Epoch: 07, Loss: 0.2956, ValLoss: 0.2977 
+Epoch: 08, Loss: 0.2908, ValLoss: 0.3093 
+Epoch: 09, Loss: 0.2901, ValLoss: 0.3299 
+Epoch: 10, Loss: 0.2909, ValLoss: 0.3299 
+Epoch: 11, Loss: 0.2862, ValLoss: 0.3462 
+Epoch: 12, Loss: 0.2798, ValLoss: 0.3907 
+Epoch: 13, Loss: 0.2833, ValLoss: 0.3659 
+Epoch: 14, Loss: 0.2833, ValLoss: 0.3619 
+Epoch: 15, Loss: 0.2785, ValLoss: 0.3771 
+Epoch: 16, Loss: 0.2781, ValLoss: 0.4038 
+Epoch: 17, Loss: 0.2766, ValLoss: 0.4317 
+Epoch: 18, Loss: 0.2720, ValLoss: 0.3947 
+Epoch: 19, Loss: 0.2696, ValLoss: 0.3836 
+Epoch: 20, Loss: 0.2659, ValLoss: 0.4271 
+Epoch: 21, Loss: 0.2675, ValLoss: 0.3436 
+Epoch: 22, Loss: 0.2672, ValLoss: 0.3954 
+Epoch: 23, Loss: 0.2653, ValLoss: 0.3739 
+Epoch: 24, Loss: 0.2656, ValLoss: 0.3853 
+Epoch: 25, Loss: 0.2639, ValLoss: 0.3912 
+Epoch: 26, Loss: 0.2635, ValLoss: 0.4098 
+Epoch: 27, Loss: 0.2607, ValLoss: 0.3687 
+Epoch: 28, Loss: 0.2580, ValLoss: 0.3948 
+Early stopping triggered at epoch 28. Best smoothed_val_loss=0.3111 at epoch 8.
+Total training time: 00h 06m 38s (398.9s), finished at epoch 28.
+AUPR: 0.754 
+AUROC: 0.751 

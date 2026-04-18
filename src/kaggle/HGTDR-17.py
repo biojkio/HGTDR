@@ -1,12 +1,15 @@
-# %% [markdown]
-# 统计不同层的元关系重要性
-# %%
+
+# HGTDR-14-3修改版，嵌入全随机
+
 from torch_geometric.nn import HGTConv, Linear
 from torch_geometric.loader import HGTLoader
 from torch_geometric.data import HeteroData
+from torch_geometric.transforms import RandomLinkSplit
+from collections import defaultdict
 import torch.nn.functional as F
 import pickle
 import torch.nn as nn
+import numpy as np
 import pandas as pd
 # from utils import *
 import random
@@ -14,41 +17,44 @@ import torch
 import copy
 import os
 import sys
+import time
 from tqdm import tqdm
 
-# %%
+def set_seed(seed: int = 42):
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)          # 多GPU
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
+
+
 device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 node_type1 = 'drug'
 node_type2 = 'disease'
 rel = 'indication'
 
-# %%
 config = {
+    "seed": 42,
+    "eval_seed": 99,          # 专门控制验证集负采样，与训练种子隔离
     "num_samples": 512,
     "batch_size": 164,
     "dropout": 0.5,
     "epochs": 300,
-    "file_name": "HGTDR-15",
+    "file_name": "HGTDR-17",
     # 早停参数
     "early_stopping_patience": 20,      # 容忍验证损失不改善的最大 epoch 数
     "early_stopping_min_delta": 1e-4,   # 认为"有改善"所需的最小降幅
     "early_stopping_smooth_window": 3   # 平滑窗口大小（消除随机负采样噪声）
 }
 
-# %% [markdown]
-# # Load data
+set_seed(config["seed"])
 
-# %%
-primekg_file = '/kaggle/input/datasets/jkiobio/hgtdr-data-simple/data/kg.csv'
+primekg_file = '/kaggle/input/datasets/jkiobio/hgtdr-data/data/kg.csv'
 df = pd.read_csv(primekg_file, sep =",")
 
-# %% [markdown]
-# ### Get drugs and diseases which are used in indication relation.
 
-# %% [markdown]
-# ### Remove drug and disease nodes that do not contribute to at least one indication edge. 
-
-# %%
 # 确保每条边连接的是 drug 和 disease（顺序不限）
 valid_rows = (
     ((df['x_type'] == 'drug') & (df['y_type'] == 'disease')) |
@@ -113,7 +119,7 @@ triplets = df.values.tolist()
 print(f"生成三元组数量: {len(triplets)}")
 print(f"示例数据: {triplets[:3]}")
 
-# %%
+
 entity_dictionary = {}
 
 for src, _, dest in triplets:
@@ -126,11 +132,7 @@ for src, _, dest in triplets:
         # 如果实体不在字典中，赋予新 ID (当前长度)
         if node not in type_dict:
             type_dict[node] = len(type_dict)
-            
 
-
-# %%
-from collections import defaultdict
 
 # 使用 defaultdict 自动初始化列表，避免 if-else 判断
 edge_dictionary = defaultdict(list)
@@ -154,37 +156,30 @@ for src, relation, dest in triplets:
 edge_dictionary = dict(edge_dictionary)
 
 
-# %% [markdown]
 # 节点类型组成维度 
 # DrugNode2Vec + ChemBERTa 128 + 767 = 895 
 # Non-DrugNode2Vec + PubMedBERT 128 + 768 = 896
 
-# %%
-# Cell 18+20: 初始化 HeteroData 并填充嵌入
-import numpy as np
-
-# 已删除 NODE2VEC_DIM 常量
+# 初始化 HeteroData 并填充嵌入
 
 CHEMBERTA_DIM  = 767
 PUBMEDBERT_DIM = 768
 
 # 加载嵌入文件
-# 已删除 node2vec_df 的加载
-pubmedbert_df = pd.read_pickle('/kaggle/input/datasets/jkiobio/hgtdr-data-simple/data/pubmedbert_embeddings.pkl')
-smiles_df     = pd.read_pickle('/kaggle/input/datasets/jkiobio/hgtdr-data-simple/data/smiles_embeddings.pkl')
+# pubmedbert_df = pd.read_pickle('/kaggle/input/datasets/jkiobio/hgtdr-data/data/pubmedbert_embeddings.pkl')
+# smiles_df     = pd.read_pickle('/kaggle/input/datasets/jkiobio/hgtdr-data/data/smiles_embeddings.pkl')
 
 # 创建字典
-# 已删除 node2vec_dict 的创建
-pubmedbert_dict = dict(zip(pubmedbert_df['id'], pubmedbert_df['embedding']))
-smiles_dict     = dict(zip(smiles_df['id'],     smiles_df['embedding']))
+# pubmedbert_dict = dict(zip(pubmedbert_df['id'], pubmedbert_df['embedding']))
+# smiles_dict     = dict(zip(smiles_df['id'],     smiles_df['embedding']))
 
 # 初始化节点特征
 data = HeteroData()
 for key in entity_dictionary.keys():
     num_nodes = len(entity_dictionary[key])
-    # 修改维度：移除 NODE2VEC_DIM
     dim = CHEMBERTA_DIM if key == 'drug' else PUBMEDBERT_DIM
     data[key].x  = torch.zeros((num_nodes, dim))
+    # data[key].x  = torch.randn((num_nodes, dim))  # 随机嵌入
     data[key].id = torch.arange(num_nodes)
 
 # 添加边
@@ -193,59 +188,77 @@ for key in edge_dictionary:
         torch.IntTensor(edge_dictionary[key]), 0, 1
     ).long().contiguous()
 
-# 填充嵌入
-for node_type, mapping in tqdm(entity_dictionary.items(), desc='填充节点嵌入'):
-    for entity_id, hgt_id in mapping.items():
+# # 填充嵌入
+# for node_type, mapping in tqdm(entity_dictionary.items(), desc='填充节点嵌入'):
+#     for entity_id, hgt_id in mapping.items():
 
-        # 已删除 node2vec 嵌入的填充逻辑
-
-        if node_type == 'drug':
-            if entity_id in smiles_dict:
-                data[node_type].x[hgt_id, :] = torch.tensor( # 修改索引
-                    np.array(smiles_dict[entity_id], dtype=np.float32)
-                )
-        else:
-            if entity_id in pubmedbert_dict:
-                data[node_type].x[hgt_id, :] = torch.tensor( # 修改索引
-                    np.array(pubmedbert_dict[entity_id], dtype=np.float32)
-                )
+#         if node_type == 'drug':
+#             if entity_id in smiles_dict:
+#                 data[node_type].x[hgt_id, :] = torch.tensor( # 修改索引
+#                     np.array(smiles_dict[entity_id], dtype=np.float32)
+#                 )
+#         else:
+#             if entity_id in pubmedbert_dict:
+#                 data[node_type].x[hgt_id, :] = torch.tensor( # 修改索引
+#                     np.array(pubmedbert_dict[entity_id], dtype=np.float32)
+#                 )
 
 print('节点维度:')
 for k in data.node_types:
     print(f'  {k}: {data[k].x.shape}')
 
-# %% [markdown]
-# ### Load train and validation data of one fold.
 
-# %%
-file = open('/kaggle/input/datasets/jkiobio/hgtdr-data-simple/data/CV data/train1.pkl', 'rb')
-train_data = pickle.load(file)
 
-# %%
-file = open('/kaggle/input/datasets/jkiobio/hgtdr-data-simple/data/CV data/val1.pkl', 'rb')
-val_data = pickle.load(file)
+# ═══════════════════════════════════════════════════════════════
+# 替代 pkl：从 data 重新构建 train_data / val_data
+# RandomLinkSplit 保证：验证监督边从消息传递图中彻底移除
+# ═══════════════════════════════════════════════════════════════
+from torch_geometric.transforms import RandomLinkSplit
 
-# %% [markdown]
-# ### Creating mask.
+# ── 1. 8:2 切分 indication 边 ──────────────────────────────────
+transform = RandomLinkSplit(
+    num_val=0.2,
+    num_test=0.0,
+    is_undirected=True,                             # 正向+反向边同步处理
+    edge_types=[(node_type1, rel, node_type2)],
+    rev_edge_types=[(node_type2, rel, node_type1)],
+    add_negative_train_samples=False,               # 负样本由 make_batch 自己生成
+)
+train_data, val_data, _ = transform(data)
 
-# %%
-# 2. 创建 Mask
-# 获取边数 (逻辑与原代码完全一致)
+# ── 2. 补充节点 id 属性（make_batch/make_test_batch 依赖此字段）──
+for split in [train_data, val_data]:
+    for ntype in data.node_types:
+        split[ntype].id = torch.arange(split[ntype].num_nodes)
+
+# ── 3. 为 make_batch 添加 mask ─────────────────────────────────
+#    在训练边中再取 80% 作为监督信号，其余 20% 留作消息传递
 drug_disease_num = train_data[(node_type1, rel, node_type2)]['edge_index'].shape[1]
+mask_idx = random.sample(range(drug_disease_num), int(drug_disease_num * 0.8))
 
-# 随机采样 80% 的索引
-mask = random.sample(range(drug_disease_num), int(drug_disease_num * 0.8))
+for direction in [(node_type1, rel, node_type2), (node_type2, rel, node_type1)]:
+    m = torch.zeros(drug_disease_num, dtype=torch.bool)
+    m[mask_idx] = True
+    train_data[direction]['mask'] = m
 
-# 初始化正向边 mask 并赋值
-train_data[(node_type1, rel, node_type2)]['mask'] = torch.zeros(drug_disease_num, dtype=torch.bool)
-train_data[(node_type1, rel, node_type2)]['mask'][mask] = True
+# ── 4. 泄露验证 ────────────────────────────────────────────────
+val_el = val_data[(node_type1, rel, node_type2)].edge_label_index
+val_ei = val_data[(node_type1, rel, node_type2)].edge_index
+label_set = set(zip(val_el[0].tolist(), val_el[1].tolist()))
+index_set  = set(zip(val_ei[0].tolist(), val_ei[1].tolist()))
+overlap    = label_set & index_set
 
-# 初始化反向边 mask 并赋值 (逻辑与原代码完全一致，保持显式写出以便阅读)
-train_data[(node_type2, rel, node_type1)]['mask'] = torch.zeros(drug_disease_num, dtype=torch.bool)
-train_data[(node_type2, rel, node_type1)]['mask'][mask] = True
+print(f"[重构验证] 训练 indication 边 : {drug_disease_num}")
+print(f"[重构验证] 验证 supervision 边: {len(label_set)}")
+print(f"[重构验证] 与消息传递图重叠   : {len(overlap)} 条 → {'⚠️ 泄露' if overlap else '✅ 无泄露'}")
 
-# %% [markdown]
-# ### Define model.
+# ── 5. 更新 global_pos_set（用重构后的完整 indication 边）───────
+global_pos_set = set(zip(
+    data[(node_type1, rel, node_type2)].edge_index[0].tolist(),
+    data[(node_type1, rel, node_type2)].edge_index[1].tolist()
+))
+
+
 
 # %%
 class HGT(nn.Module):
@@ -275,7 +288,7 @@ class HGT(nn.Module):
         for i, conv in enumerate(self.convs):
             x_dict = conv(x_dict, edge_index_dict)
 
-            if out == {}:
+            if out=={}:
                 out = copy.copy(x_dict)
             else:
                 out = {
@@ -285,7 +298,7 @@ class HGT(nn.Module):
 
         return F.relu(self.lin(out[node_type1])), F.relu(self.lin(out[node_type2]))
 
-# %%
+
 class MLPPredictor(nn.Module):
     def __init__(self, channel_num, dropout):
         super().__init__()
@@ -301,16 +314,12 @@ class MLPPredictor(nn.Module):
         x = self.dropout(x)
         return self.L2(x)
 
-# %%
-
 def compute_loss(scores, labels):
     weight = torch.where(labels == 1,
                          (labels == 0).sum() / labels.shape[0],
                          (labels == 1).sum() / labels.shape[0])
     return F.binary_cross_entropy_with_logits(scores.squeeze(), labels, weight=weight)
 
-
-# %%
 def define_model(dropout):
     GNN = HGT(hidden_channels=[64, 64, 64, 64],
               out_channels=64,
@@ -324,7 +333,6 @@ def define_model(dropout):
 
     return GNN, pred, model
 
-# %%
 def define_loaders(config):
     kwargs = {
         'batch_size': config['batch_size'],
@@ -337,12 +345,6 @@ def define_loaders(config):
     val_loader = HGTLoader(val_data, num_samples=[config['num_samples']] * 3, shuffle=True, input_nodes=(node_type1, None), **kwargs)
 
     return train_loader, val_loader
-
-# %%
-def edge_exists(edges, edge):
-    edges = edges.to(device)
-    edge = edge.to(device)
-    return (edges == edge).all(dim=0).sum() > 0
 
 # %% [markdown]
 # ### Make batches.
@@ -393,17 +395,12 @@ def make_batch(batch):
     return batch
 
 # %%
-
-global_pos_set = set(zip(
-    data[(node_type1, rel, node_type2)]['edge_index'][0].tolist(),
-    data[(node_type1, rel, node_type2)]['edge_index'][1].tolist()
-))  
-
-def make_test_batch(batch):
+# ── 2. make_test_batch：用确定性种子，采完后恢复随机状态 ────────
+def make_test_batch(batch, eval_seed=99):
 
     batch_size = batch[node_type1].batch_size
     edge_label_index = batch[(node_type1, rel, node_type2)]['edge_label_index']
-    edge_label      = batch[(node_type1, rel, node_type2)]['edge_label']
+    edge_label       = batch[(node_type1, rel, node_type2)]['edge_label']
 
     source, dest = [], []
     for i in range(edge_label_index.shape[1]):
@@ -420,7 +417,22 @@ def make_test_batch(batch):
     edge_label_index[1] = torch.tensor(dest)
     pos_num = edge_label_index.shape[1]
 
-    # ── 向量化负采样 ─────────────────────────────────────────
+    # ── 用正样本全局 ID 派生确定性 batch_seed ─────────────────
+    # 同一批正样本无论第几个 epoch 调用，都能生成完全相同的负样本
+    orig_srcs = batch[node_type1]['id'][edge_label_index[0]].tolist()
+    orig_dsts = batch[node_type2]['id'][edge_label_index[1]].tolist()
+    batch_seed = eval_seed
+    for s, d in zip(sorted(orig_srcs), sorted(orig_dsts)):
+        batch_seed = hash((batch_seed, s, d)) & 0xFFFFFFFF
+
+    # ── 保存当前随机状态，切换到确定性种子 ──────────────────────
+    py_rng_state    = random.getstate()
+    torch_rng_state = torch.get_rng_state()
+    cuda_rng_state  = torch.cuda.get_rng_state() if torch.cuda.is_available() else None
+    random.seed(batch_seed)
+    torch.manual_seed(batch_seed)
+
+    # ── 负采样（逻辑与原 make_test_batch 完全一致）──────────────
     num_disease = batch[node_type2].x.shape[0]
     oversample  = int(pos_num * 2) + 64
     src_cand = torch.randint(0, batch_size,  (oversample,))
@@ -440,9 +452,15 @@ def make_test_batch(batch):
         orig_dst = batch[node_type2]['id'][d].item()
         if (orig_src, orig_dst) not in global_pos_set:
             valid.append((s, d))
-    neg_edges = torch.tensor(valid, dtype=torch.long).t()
-    # ─────────────────────────────────────────────────────────
 
+    # ── 恢复随机状态（训练的随机性完全不受影响）────────────────
+    random.setstate(py_rng_state)
+    torch.set_rng_state(torch_rng_state)
+    if cuda_rng_state is not None:
+        torch.cuda.set_rng_state(cuda_rng_state)
+    # ──────────────────────────────────────────────────────────
+
+    neg_edges = torch.tensor(valid, dtype=torch.long).t()
     edge_label_index = torch.cat((edge_label_index, neg_edges), dim=1)
     edge_label = torch.cat((torch.ones(pos_num), torch.zeros(pos_num)))
 
@@ -487,41 +505,37 @@ def train(GNN, pred, model, loader, optimizer):
 # ### Test
 
 # %%
+# ── 3. test 函数：把 eval_seed 传进去 ────────────────────────
 @torch.no_grad()
-def test(GNN, pred, model, loader):
+def test(GNN, pred, model, loader, eval_seed=99):
     model.eval()
 
-    total_examples = total_correct = 0
     out, labels = torch.tensor([]).to(device), torch.tensor([]).to(device)
     source, dest = torch.tensor([]).to(device), torch.tensor([]).to(device)
     for batch in iter(loader):
-        batch = make_test_batch(batch)
+        batch = make_test_batch(batch, eval_seed=eval_seed)   # ← 传入种子
         batch = batch.to(device, non_blocking=True)
         drug_embeddings, disease_embeddings = GNN(batch.x_dict, batch.edge_index_dict)
-        
+
         edge_label_index = batch[(node_type1, rel, node_type2)]['edge_label_index']
         edge_label = batch[(node_type1, rel, node_type2)]['edge_label'].to(device, non_blocking=True)
-        
+
         if edge_label.shape[0] == 0:
             continue
-                
+
         c = drug_embeddings[edge_label_index[0]]
         d = disease_embeddings[edge_label_index[1]]
         batch_out = pred(c, d)[:, 0]
         labels = torch.cat((labels, edge_label))
-        out = torch.cat((out, batch_out))
-        
-        drugs = batch[node_type1]['id'][edge_label_index[0]]
+        out    = torch.cat((out, batch_out))
+
+        drugs    = batch[node_type1]['id'][edge_label_index[0]]
         diseases = batch[node_type2]['id'][edge_label_index[1]]
         source = torch.cat((source, drugs))
-        dest = torch.cat((dest, diseases))
+        dest   = torch.cat((dest,   diseases))
 
-    loss = compute_loss(out, labels)    
+    loss = compute_loss(out, labels)
     return out, labels, source, dest, loss.cpu().numpy()
-
-
-
-
 # %% [markdown]
 # ### Run
 
@@ -550,11 +564,19 @@ def run(config):
     script_name = config.get("file_name")
     output_dir = os.path.join('/kaggle/working', script_name)
     os.makedirs(output_dir, exist_ok=True)
+
+     # ── 记录训练开始时间 ──────────────────────────────────────
+    train_start_time = time.time()
+    # ─────────────────────────────────────────────────────────
     
     for epoch in tqdm(range(config['epochs']), desc="Training Progress"):
         loss = train(GNN, pred, model, train_loader, optimizer)
-        out, labels, source, dest, val_loss = test(GNN, pred, model, val_loader)
-        
+        # ── 4. run 函数里的 test 调用加上 eval_seed ──────────────────
+        # （两处，训练循环内和最终评估）
+        out, labels, source, dest, val_loss = test(
+            GNN, pred, model, val_loader,
+            eval_seed=config['eval_seed']    # ← 加这个参数
+        )
         write_to_out(f'Epoch: {epoch:02d}, Loss: {loss:.4f}, ValLoss: {val_loss:.4f} \n', output_dir)
         losses.append(loss)
         val_losses.append(val_loss)
@@ -593,86 +615,31 @@ def run(config):
                 break
         # ─────────────────────────────────────────────────────────
 
+
+    # ── 记录训练结束时间并写入 out.txt ────────────────────────
+    train_end_time = time.time()
+    total_seconds = train_end_time - train_start_time
+    h, rem = divmod(int(total_seconds), 3600)
+    m, s = divmod(rem, 60)
+    write_to_out(
+        f'Total training time: {h:02d}h {m:02d}m {s:02d}s ({total_seconds:.1f}s), '
+        f'finished at epoch {epoch}.\n',
+        output_dir
+    )
+    # ─────────────────────────────────────────────────────────
+
     # 训练结束后加载 best model 再做最终评估
     model.load_state_dict(torch.load(os.path.join(output_dir, 'saved_model.pt'), map_location=device))
-    out, labels, source, dest, val_loss = test(GNN, pred, model, val_loader)
+    
+    # ── 4. run 函数里的 test 调用加上 eval_seed ──────────────────
+    # （两处，训练循环内和最终评估）
+    out, labels, source, dest, val_loss = test(
+        GNN, pred, model, val_loader,
+        eval_seed=config['eval_seed']    # ← 加这个参数
+    )
     AUPR(out, labels, output_dir)
     AUROC(out, labels, output_dir)
-    layer_stats = collect_meta_relation_importance(GNN)
-    save_meta_relation_importance(layer_stats, output_dir, top_k=5)
     
+
 # %%
-# ─── 元关系重要性统计 ───────────────────────────────────────────────────────────
-# %%
-# ─── 元关系重要性统计──────────────────────────────
-
-@torch.no_grad()
-def collect_meta_relation_importance(GNN):
-    """
-    直接读取 HGTConv 的 p_rel 参数（元关系重要性标量，shape [1, heads]），
-    对 heads 取均值作为该元关系的重要性得分。
-    key 格式为 'src__rel__dst'（HGTConv 内部用 __ 拼接）。
-    """
-    layer_stats = []
-    for conv in GNN.convs:
-        stats = {}
-        for etype_key, param in conv.p_rel.items():
-            # param shape: [1, heads]，取均值
-            stats[etype_key] = param.mean().item()
-        layer_stats.append(stats)
-    return layer_stats
-
-
-def save_meta_relation_importance(layer_stats, output_dir, top_k=5):
-    """
-    将每层 top_k 元关系重要性保存为 CSV（格式对应 Table S1）。
-    etype_key 格式: 'src__rel__dst'
-    """
-    rows = []
-    num_layers = len(layer_stats)
-    for layer_idx, stats in enumerate(layer_stats):
-        layer_label = f"Layer {num_layers - layer_idx}"
-        sorted_etypes = sorted(stats.items(), key=lambda x: x[1], reverse=True)[:top_k]
-        for etype_key, importance in sorted_etypes:
-            parts = etype_key.split('__')
-            src_type  = parts[0] if len(parts) > 0 else ''
-            edge_name = parts[1] if len(parts) > 1 else ''
-            dst_type  = parts[2] if len(parts) > 2 else ''
-            rows.append({
-                "Layer": layer_label,
-                "Node type (source)": src_type.capitalize(),
-                "Edge type": edge_name.replace('_', '-'),
-                "Node type (target)": dst_type.capitalize(),
-                "Meta-relation importance": round(importance, 3)
-            })
-
-    df_result = pd.DataFrame(rows, columns=[
-        "Layer", "Node type (source)", "Edge type",
-        "Node type (target)", "Meta-relation importance"
-    ])
-
-    save_path = os.path.join(output_dir, "meta_relation_importance.csv")
-    df_result.to_csv(save_path, index=False)
-    print(f"[元关系重要性] 已保存至: {save_path}")
-    print(df_result.to_string(index=False))
-    return df_result
-# %%
-def run_importance_analysis(config):
-    script_name = config.get("file_name")
-    output_dir = os.path.join('/kaggle/working', script_name)
-    os.makedirs(output_dir, exist_ok=True)
-
-    _, val_loader = define_loaders(config)
-    GNN, pred, model = define_model(config['dropout'])
-
-    model_path = os.path.join(output_dir, 'saved_model.pt')
-    model.load_state_dict(torch.load(model_path, map_location=device))
-
-    layer_stats = collect_meta_relation_importance(GNN)
-    save_meta_relation_importance(layer_stats, output_dir, top_k=5)
-print("ok")
-
-
-run(config)
-
-# run_importance_analysis(config)
+# run(config)

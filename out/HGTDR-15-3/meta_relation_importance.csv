@@ -1,0 +1,16 @@
+Layer,Node type (source),Edge type,Node type (target),Meta-relation importance
+Layer 3,Disease,disease-disease,Disease,1.136
+Layer 3,Effect/phenotype,phenotype-protein,Gene/protein,1.083
+Layer 3,Disease,off-label use,Drug,1.071
+Layer 3,Gene/protein,disease-protein,Disease,1.068
+Layer 3,Disease,disease-protein,Gene/protein,1.066
+Layer 2,Disease,disease-phenotype-negative,Effect/phenotype,1.18
+Layer 2,Anatomy,anatomy-protein-absent,Gene/protein,1.079
+Layer 2,Drug,contraindication,Disease,1.077
+Layer 2,Effect/phenotype,disease-phenotype-negative,Disease,1.075
+Layer 2,Biological_process,bioprocess-protein,Gene/protein,1.072
+Layer 1,Disease,indication,Drug,1.134
+Layer 1,Disease,disease-disease,Disease,1.124
+Layer 1,Effect/phenotype,disease-phenotype-positive,Disease,1.108
+Layer 1,Drug,contraindication,Disease,1.108
+Layer 1,Drug,off-label use,Disease,1.096

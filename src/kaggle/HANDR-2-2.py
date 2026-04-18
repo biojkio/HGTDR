@@ -1,5 +1,5 @@
 # %% [markdown]
-# 添加了元路径权重统计和绘图，pyg升级了，没法用
+# 有元路径权重统计和绘图
 
 # %%
 from torch_geometric.nn import HANConv, Linear
@@ -63,7 +63,7 @@ config = {
 # # Load data
 
 # %%
-primekg_file = '/kaggle/input/datasets/jkiobio/hgtdr-data-simple/data/kg.csv'
+primekg_file = '/kaggle/input/datasets/jkiobio/hgtdr-data/data/kg.csv'
 df = pd.read_csv(primekg_file, sep =",")
 
 # %% [markdown]
@@ -194,8 +194,8 @@ PUBMEDBERT_DIM = 768
 
 # 加载嵌入文件
 # 已删除 node2vec_df 的加载
-pubmedbert_df = pd.read_pickle('/kaggle/input/datasets/jkiobio/hgtdr-data-simple/data/pubmedbert_embeddings.pkl')
-smiles_df     = pd.read_pickle('/kaggle/input/datasets/jkiobio/hgtdr-data-simple/data/smiles_embeddings.pkl')
+pubmedbert_df = pd.read_pickle('/kaggle/input/datasets/jkiobio/hgtdr-data/data/pubmedbert_embeddings.pkl')
+smiles_df     = pd.read_pickle('/kaggle/input/datasets/jkiobio/hgtdr-data/data/smiles_embeddings.pkl')
 
 # 创建字典
 # 已删除 node2vec_dict 的创建
@@ -242,11 +242,11 @@ for k in data.node_types:
 # ### Load train and validation data of one fold.
 
 # %%
-file = open('/kaggle/input/datasets/jkiobio/hgtdr-data-simple/data/CV data/train1.pkl', 'rb')
+file = open('/kaggle/input/datasets/jkiobio/cv-mp-data/CV_mp_data/train_mp1.pkl', 'rb')
 train_data = pickle.load(file)
 
 # %%
-file = open('/kaggle/input/datasets/jkiobio/hgtdr-data-simple/data/CV data/val1.pkl', 'rb')
+file = open('/kaggle/input/datasets/jkiobio/cv-mp-data/CV_mp_data/val_mp1.pkl', 'rb')
 val_data = pickle.load(file)
 
 # %% [markdown]
@@ -312,28 +312,23 @@ class HAN(nn.Module):
 
         for i, conv in enumerate(self.convs):
             if return_weights:
-                # return_semantic_attention_weights=True 时
-                # x_dict 变为 {node_type: (out, (metapath_list, attn_weights))}
-                out = conv(x_dict, edge_index_dict,
-                           return_semantic_attention_weights=True)
-                # 提取各节点类型的语义注意力并平均
-                layer_weights = []
-                for node_type, val in out.items():
-                    if isinstance(val, tuple):
-                        _, (_, attn) = val  # attn: [num_metapaths]
-                        layer_weights.append(attn.detach().cpu())
-                if layer_weights:
-                    # 跨节点类型取均值（通常 drug/disease 各有一组）
-                    avg = torch.stack(layer_weights).mean(0)
-                    self._semantic_attn_accum[i].append(avg)
-                # 重新整理 x_dict 为纯 Tensor
-                x_dict = {
-                    k: (v[0] if isinstance(v, tuple) else v)
-                    for k, v in out.items()
-                }
+                out, attn_dict = conv(
+                    x_dict, edge_index_dict,
+                    return_semantic_attention_weights=True
+                )
+                # 优先取 drug，没有再取 disease
+                if node_type1 in attn_dict and attn_dict[node_type1] is not None:
+                    attn = attn_dict[node_type1]
+                elif node_type2 in attn_dict and attn_dict[node_type2] is not None:
+                    attn = attn_dict[node_type2]
+                else:
+                    attn = None
+                if attn is not None:
+                    self._semantic_attn_accum[i].append(attn.detach().cpu())
+                x_dict = out
             else:
                 x_dict = conv(x_dict, edge_index_dict)
-
+        
             x_dict = {k: F.relu(v) for k, v in x_dict.items() if v is not None}
 
         
@@ -788,7 +783,45 @@ def run(config):
     out, labels, source, dest, val_loss = test(GNN, pred, model, val_loader)
     AUPR(out, labels, output_dir)
     AUROC(out, labels, output_dir)
-    
+    # ── 元路径重要性输出
+    extract_metapath_importance(GNN, val_loader, output_dir, epoch_label='best')
 
 # %%
 # run(config)
+
+
+
+
+
+# %%
+# 独立脚本：加载已保存的模型，提取并可视化元路径重要性
+# 依赖：已在全局作用域中完成数据加载（data, train_data, val_data 等变量存在）
+
+import os
+import torch
+
+# ─── 配置 ────────────────────────────────────────────────────────────────────
+MODEL_PATH = '/kaggle/input/datasets/jkiobio/handr-2-data/HANDR-2/saved_model.pt'
+OUTPUT_DIR = '/kaggle/working/HANDR-2'
+os.makedirs(OUTPUT_DIR, exist_ok=True)
+
+# ─── 重建模型结构（与训练时完全一致）────────────────────────────────────────
+dropout = config['dropout']   # 0.5，与训练 config 保持一致
+GNN, pred, model = define_model(dropout)
+
+# ─── 加载权重 ────────────────────────────────────────────────────────────────
+state_dict = torch.load(MODEL_PATH, map_location=device)
+model.load_state_dict(state_dict)
+model.eval()
+print(f" 模型已从 {MODEL_PATH} 加载完毕")
+
+# ─── 重建 val_loader ─────────────────────────────────────────────────────────
+_, val_loader = define_loaders(config)
+
+# ─── 提取元路径重要性 ─────────────────────────────────────────────────────────
+df_weights = extract_metapath_importance(
+    GNN,
+    val_loader,
+    output_dir=OUTPUT_DIR,
+    epoch_label='best'
+)
